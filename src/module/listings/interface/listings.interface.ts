@@ -90,7 +90,8 @@ export interface CategoryFilterAttribute {
   unit: string | null;
   isRequired: boolean;
   sortOrder: number;
-  options: Array<{ value: string; label: string }>;
+  options?: Array<{ value: string; label: string }>;
+  range?: { min: number | null; max: number | null };
 }
 
 export interface ListingSearchResponse {

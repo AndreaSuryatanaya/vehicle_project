@@ -97,7 +97,10 @@ describe('Categories and Listings API (e2e)', () => {
         { facet: 'make', value: '1', label: 'Honda', count: 1 },
       ]),
       findCategoryFilters: vi.fn(async () => [
-        { id: '11', key: 'engine_size', label: 'Engine size', type: 'range', options: [] },
+        {
+          id: '11', key: 'engine_size', label: 'Engine size', type: 'range',
+          unit: 'cc', range: { min: 110, max: 250 },
+        },
       ]),
       findById: vi.fn(async (id: string) => id === '999' ? undefined : listing),
       update: vi.fn(async (id: string, _input: UpdateListingRecord) => id === '999' ? undefined : listing),

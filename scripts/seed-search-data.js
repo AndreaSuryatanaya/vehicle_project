@@ -35,6 +35,36 @@ const categoryDefinitions = [
   { name: 'Underbone', slug: 'underbone', parent: 'motorcycles', sortOrder: 3 },
 ];
 
+// Filter metadata is category-specific; it is separate from each listing's values.
+const categoryFilterDefinitions = {
+  cars: [
+    { key: 'body_type', label: 'Body type', type: 'enum', options: ['SUV', 'MPV', 'Sedan', 'Hatchback', 'Pickup', 'Crossover'] },
+    { key: 'seat_capacity', label: 'Seat capacity', type: 'range', unit: 'seats' },
+  ],
+  suv: [
+    { key: 'drivetrain', label: 'Drivetrain', type: 'enum', options: ['FWD', 'RWD', 'AWD', '4WD'] },
+    { key: 'seat_capacity', label: 'Seat capacity', type: 'range', unit: 'seats' },
+  ],
+  mpv: [
+    { key: 'seat_capacity', label: 'Seat capacity', type: 'range', unit: 'seats' },
+    { key: 'sliding_door', label: 'Sliding doors', type: 'boolean' },
+  ],
+  motorcycles: [
+    { key: 'engine_capacity', label: 'Engine capacity', type: 'range', unit: 'cc' },
+    { key: 'motorcycle_style', label: 'Motorcycle style', type: 'enum', options: ['Scooter', 'Sport bike', 'Underbone'] },
+  ],
+  scooter: [
+    { key: 'engine_capacity', label: 'Engine capacity', type: 'range', unit: 'cc' },
+  ],
+  'sport-bike': [
+    { key: 'engine_capacity', label: 'Engine capacity', type: 'range', unit: 'cc' },
+    { key: 'abs', label: 'ABS', type: 'boolean' },
+  ],
+  underbone: [
+    { key: 'engine_capacity', label: 'Engine capacity', type: 'range', unit: 'cc' },
+  ],
+};
+
 const catalog = [
   ['Toyota', 'Fortuner', 'suv', 'diesel', 'car', 560_000_000],
   ['Toyota', 'Avanza', 'mpv', 'petrol', 'car', 250_000_000],
@@ -142,6 +172,34 @@ async function ensureModel(client, makeId, name) {
   return String(id);
 }
 
+async function ensureCategoryFilters(client, categoryId, definitions) {
+  for (const [sortOrder, definition] of definitions.entries()) {
+    const result = await client.query(`
+      INSERT INTO category_attributes (
+        category_id, key, label, type, unit, is_filterable, is_required, sort_order
+      ) VALUES ($1::BIGINT, $2, $3, $4, $5, TRUE, FALSE, $6)
+      ON CONFLICT (category_id, key) DO UPDATE SET
+        label = EXCLUDED.label,
+        type = EXCLUDED.type,
+        unit = EXCLUDED.unit,
+        is_filterable = TRUE,
+        sort_order = EXCLUDED.sort_order
+      RETURNING id
+    `, [categoryId, definition.key, definition.label, definition.type, definition.unit ?? null, sortOrder + 1]);
+    const attributeId = result.rows[0].id;
+
+    for (const [optionOrder, option] of (definition.options ?? []).entries()) {
+      await client.query(`
+        INSERT INTO attribute_options (attribute_id, value, label, sort_order)
+        VALUES ($1::BIGINT, $2, $2, $3)
+        ON CONFLICT (attribute_id, value) DO UPDATE SET
+          label = EXCLUDED.label,
+          sort_order = EXCLUDED.sort_order
+      `, [attributeId, option, optionOrder + 1]);
+    }
+  }
+}
+
 async function main() {
   const client = await pool.connect();
   try {
@@ -168,6 +226,9 @@ async function main() {
     }
     for (const definition of categoryDefinitions.filter((item) => item.parent !== null)) {
       await ensureCategory(client, definition, categoryIds);
+    }
+    for (const [categorySlug, definitions] of Object.entries(categoryFilterDefinitions)) {
+      await ensureCategoryFilters(client, categoryIds.get(categorySlug), definitions);
     }
 
     const makeIds = new Map();
@@ -206,6 +267,7 @@ async function main() {
       const createdAt = new Date(Date.now() - (index % 730) * 86_400_000).toISOString();
       return {
         categoryId: categoryIds.get(categorySlug),
+        categorySlug,
         modelId: modelIds.get(`${make}|${model}`),
         year,
         mileage,
@@ -260,6 +322,59 @@ async function main() {
       SELECT id, 'https://images.example.test/seed/' || id || '-front.jpg', 0, TRUE
       FROM listings WHERE title LIKE $1
     `, [`${fixtureTitlePrefix}%`]);
+
+    const rangeAttributes = await client.query(`
+      SELECT c.slug, ca.id, ca.key
+      FROM category_attributes ca
+      JOIN categories c ON c.id = ca.category_id
+      WHERE ca.type = 'range' AND ca.is_filterable = TRUE
+    `);
+    const rangeAttributeIds = new Map(
+      rangeAttributes.rows.map((attribute) => [`${attribute.slug}|${attribute.key}`, String(attribute.id)]),
+    );
+    const categoryBySlug = new Map(categoryDefinitions.map((category) => [category.slug, category]));
+    const fixtureByTitle = new Map(rows.map((row) => [row.title, row]));
+    const attributeValues = [];
+    for (const listing of inserted.rows) {
+      const fixture = fixtureByTitle.get(listing.title);
+      const listingCategorySlug = fixture.categorySlug;
+      let categorySlug = fixture.categorySlug;
+      while (categorySlug) {
+        const category = categoryBySlug.get(categorySlug);
+        for (const [slugAndKey, attributeId] of rangeAttributeIds) {
+          const [attributeCategorySlug, key] = slugAndKey.split('|');
+          if (attributeCategorySlug !== categorySlug) continue;
+
+          let value;
+          if (key === 'engine_capacity') {
+            const offset = Number(listing.id) % 97;
+            value = listingCategorySlug === 'scooter'
+              ? 110 + (offset % 191)
+              : listingCategorySlug === 'sport-bike'
+                ? 150 + (offset % 851)
+                : 110 + (offset % 61);
+          } else if (key === 'seat_capacity') {
+            value = listingCategorySlug === 'mpv'
+              ? 7 + (Number(listing.id) % 2)
+              : 5 + (Number(listing.id) % 3 === 0 ? 2 : 0);
+          }
+          if (value !== undefined) {
+            attributeValues.push([String(listing.id), attributeId, value]);
+          }
+        }
+        categorySlug = category.parent;
+      }
+    }
+    if (attributeValues.length > 0) {
+      await client.query(`
+        INSERT INTO listing_attribute_values (listing_id, attribute_id, value_number)
+        SELECT * FROM unnest($1::BIGINT[], $2::BIGINT[], $3::NUMERIC[])
+      `, [
+        attributeValues.map(([listingId]) => listingId),
+        attributeValues.map(([, attributeId]) => attributeId),
+        attributeValues.map(([, , value]) => value),
+      ]);
+    }
 
     await client.query('COMMIT');
     console.log(`Seeded ${inserted.rowCount ?? rows.length} listings across ${categoryDefinitions.length - 2} subcategories.`);

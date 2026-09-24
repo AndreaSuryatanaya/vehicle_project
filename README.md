@@ -77,7 +77,7 @@ Untuk jumlah lain gunakan minimal 500:
 SEED_LISTING_COUNT=1000 yarn seed
 ```
 
-Seed menambahkan kategori, makes, models, listing, dan gambar listing yang dibutuhkan oleh data demo. Saat dijalankan ulang, script hanya mengganti listing dengan judul berawalan `SEED-DEMO-`; data listing lain tidak dihapus.
+Seed menambahkan kategori, atribut filter kategori beserta opsi enum, makes, models, listing, dan gambar listing yang dibutuhkan oleh data demo. Atribut filter dibuat secara idempotent untuk kategori Cars, Motorcycles, serta beberapa subkategori agar endpoint `GET /filters/:categoryId` memiliki metadata untuk ditampilkan. Saat dijalankan ulang, script hanya mengganti listing dengan judul berawalan `SEED-DEMO-`; data listing lain tidak dihapus.
 
 ### 6. Jalankan API
 

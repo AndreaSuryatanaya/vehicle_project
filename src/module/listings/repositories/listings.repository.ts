@@ -368,18 +368,40 @@ export class ListingsRepository {
 
   async findCategoryFilters(categoryId: string): Promise<CategoryFilterAttribute[]> {
     const result = await this.database.query<CategoryFilterAttribute>(`
+      WITH RECURSIVE category_tree(id) AS (
+        SELECT id FROM categories
+        WHERE id = $1::BIGINT AND is_active = TRUE
+        UNION ALL
+        SELECT child.id
+        FROM categories child
+        JOIN category_tree parent ON child.parent_id = parent.id
+        WHERE child.is_active = TRUE
+      )
       SELECT ca.id, ca.key, ca.label, ca.type, ca.unit,
         ca.is_required AS "isRequired", ca.sort_order AS "sortOrder",
-        COALESCE(
+        CASE WHEN ca.type = 'enum' THEN COALESCE(
           jsonb_agg(jsonb_build_object('value', ao.value, 'label', ao.label)
             ORDER BY ao.sort_order) FILTER (WHERE ao.id IS NOT NULL),
           '[]'::JSONB
-        ) AS options
+        ) END AS options,
+        CASE WHEN ca.type = 'range' THEN jsonb_build_object(
+          'min', range_values.min_value,
+          'max', range_values.max_value
+        ) END AS range
       FROM category_attributes ca
       JOIN categories c ON c.id = ca.category_id AND c.is_active = TRUE
       LEFT JOIN attribute_options ao ON ao.attribute_id = ca.id
+      LEFT JOIN LATERAL (
+        SELECT MIN(lav.value_number)::DOUBLE PRECISION AS min_value,
+          MAX(lav.value_number)::DOUBLE PRECISION AS max_value
+        FROM category_tree descendant
+        JOIN listings l ON l.category_id = descendant.id
+          AND l.status = 'available' AND l.deleted_at IS NULL
+        JOIN listing_attribute_values lav ON lav.listing_id = l.id
+          AND lav.attribute_id = ca.id AND lav.value_number IS NOT NULL
+      ) range_values ON TRUE
       WHERE ca.category_id = $1::BIGINT AND ca.is_filterable = TRUE
-      GROUP BY ca.id
+      GROUP BY ca.id, range_values.min_value, range_values.max_value
       ORDER BY ca.sort_order, ca.id
     `, [categoryId]);
     return result.rows;
