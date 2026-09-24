@@ -1,53 +1,11 @@
 import { Injectable } from '@nestjs/common';
 import { DatabaseService } from '../../../database/database.service.js';
-
-export interface CategoryRecord {
-  id: string;
-  parentId: string | null;
-  name: string;
-  slug: string;
-  sortOrder: number;
-  isActive: boolean;
-  depth?: number;
-}
-
-export interface CreateCategoryRecord {
-  parentId: string | null;
-  name: string;
-  slug: string;
-  sortOrder: number;
-}
-
-export interface UpdateCategoryRecord {
-  parentId?: string | null;
-  name?: string;
-  slug?: string;
-  sortOrder?: number;
-  isActive?: boolean;
-}
-
-export interface CategoryListingRecord {
-  id: string;
-  categoryId: string;
-  categoryName: string;
-  modelId: string;
-  year: number;
-  mileage: number;
-  price: string;
-  condition: string;
-  transmission: string;
-  fuelType: string;
-  color: string;
-  city: string;
-  region: string;
-  status: string;
-  title: string;
-  description: string;
-  createdAt: Date;
-  updatedAt: Date;
-  makeName: string;
-  modelName: string;
-}
+import type {
+  CategoryListingRecord,
+  CategoryRecord,
+  CreateCategoryRecord,
+  UpdateCategoryRecord,
+} from '../interface/categories.interface.js';
 
 @Injectable()
 export class CategoriesRepository {

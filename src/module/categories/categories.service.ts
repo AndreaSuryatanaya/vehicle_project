@@ -10,34 +10,16 @@ import {
   type PaginatedResponse,
   type PaginationParams,
 } from '../../common/pagination/pagination.js';
-import {
-  CategoriesRepository,
-  type CategoryRecord,
-  type CategoryListingRecord,
-  type CreateCategoryRecord,
-  type UpdateCategoryRecord,
-} from './repositories/categories.repository.js';
-
-export type Category = CategoryRecord;
-
-export interface CategoryTreeNode extends Omit<CategoryRecord, 'depth'> {
-  children: CategoryTreeNode[];
-}
-
-export interface CreateCategoryInput {
-  name: string;
-  slug?: string;
-  parentId?: string | null;
-  sortOrder?: number;
-}
-
-export interface UpdateCategoryInput {
-  name?: string;
-  slug?: string;
-  parentId?: string | null;
-  sortOrder?: number;
-  isActive?: boolean;
-}
+import { CategoriesRepository } from './repositories/categories.repository.js';
+import type {
+  CategoryListingRecord,
+  CategoryRecord,
+  CategoryTreeNode,
+  CreateCategoryInput,
+  CreateCategoryRecord,
+  UpdateCategoryInput,
+  UpdateCategoryRecord,
+} from './interface/categories.interface.js';
 
 @Injectable()
 export class CategoriesService {
@@ -120,7 +102,7 @@ export class CategoriesService {
     };
   }
 
-  async create(input: CreateCategoryInput): Promise<Category> {
+  async create(input: CreateCategoryInput): Promise<CategoryRecord> {
     const name = input.name.trim();
     const record: CreateCategoryRecord = {
       name,
@@ -138,7 +120,10 @@ export class CategoriesService {
     }
   }
 
-  async update(id: string, input: UpdateCategoryInput): Promise<Category> {
+  async update(id: string, input: UpdateCategoryInput): Promise<CategoryRecord> {
+    if (!input || Object.keys(input).length === 0) {
+      throw new BadRequestException('At least one category field is required');
+    }
     const record: UpdateCategoryRecord = { ...input };
     if (input.name !== undefined) record.name = input.name.trim();
     if (input.slug !== undefined) record.slug = this.normalizeSlug(input.slug);
