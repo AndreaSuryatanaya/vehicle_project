@@ -97,6 +97,14 @@ curl http://localhost:3000/
 
 Compose menjalankan tiga service: API, PostgreSQL, dan Redis. Database Compose terpisah dari PostgreSQL lokal. Data database disimpan di volume bernama `postgres_data`.
 
+Perintah Compose harus mengetahui lokasi `docker-compose.yml`. Untuk menjalankannya dari direktori mana pun, set variable `PROJECT_DIR` ke folder project (gunakan path absolut):
+
+```bash
+export PROJECT_DIR="/path/to/vehicle-project"
+```
+
+Ganti `/path/to/vehicle-project` dengan lokasi project di komputer/server Anda, misalnya `/home/andv/vehicle-project`.
+
 ### 1. Pastikan container engine berjalan
 
 Dengan Docker Desktop, pastikan Docker aktif. Dengan Podman di macOS, pastikan Podman machine sudah dibuat dan berjalan:
@@ -117,15 +125,15 @@ podman machine start
 Untuk Podman:
 
 ```bash
-podman-compose up --build -d
-podman-compose ps
+podman-compose -f "$PROJECT_DIR/docker-compose.yml" up --build -d
+podman-compose -f "$PROJECT_DIR/docker-compose.yml" ps
 ```
 
 Untuk Docker:
 
 ```bash
-docker compose up --build -d
-docker compose ps
+docker compose -f "$PROJECT_DIR/docker-compose.yml" up --build -d
+docker compose -f "$PROJECT_DIR/docker-compose.yml" ps
 ```
 
 Saat API mulai, container akan menjalankan migration terlebih dahulu. Tunggu sampai service `api`, `postgres`, dan `redis` berjalan/healthy.
@@ -137,25 +145,25 @@ Seed **tidak dijalankan otomatis** saat startup. Jalankan sekali setelah service
 Podman:
 
 ```bash
-podman-compose exec api node scripts/seed-search-data.js
+podman-compose -f "$PROJECT_DIR/docker-compose.yml" exec api node scripts/seed-search-data.js
 ```
 
 Docker:
 
 ```bash
-docker compose exec api node scripts/seed-search-data.js
+docker compose -f "$PROJECT_DIR/docker-compose.yml" exec api node scripts/seed-search-data.js
 ```
 
 Secara default, perintah ini membuat 600 listing demo. Untuk jumlah lain, tambahkan environment variable ke perintah:
 
 ```bash
-podman-compose exec -e SEED_LISTING_COUNT=1000 api node scripts/seed-search-data.js
+podman-compose -f "$PROJECT_DIR/docker-compose.yml" exec -e SEED_LISTING_COUNT=1000 api node scripts/seed-search-data.js
 ```
 
 Dengan Docker, gunakan:
 
 ```bash
-docker compose exec -e SEED_LISTING_COUNT=1000 api node scripts/seed-search-data.js
+docker compose -f "$PROJECT_DIR/docker-compose.yml" exec -e SEED_LISTING_COUNT=1000 api node scripts/seed-search-data.js
 ```
 
 ### 4. Gunakan API
@@ -173,15 +181,15 @@ Compose mempublikasikan PostgreSQL ke port host `5433` agar tidak bentrok dengan
 Podman:
 
 ```bash
-podman-compose logs -f api
-podman-compose down
+podman-compose -f "$PROJECT_DIR/docker-compose.yml" logs -f api
+podman-compose -f "$PROJECT_DIR/docker-compose.yml" down
 ```
 
 Docker:
 
 ```bash
-docker compose logs -f api
-docker compose down
+docker compose -f "$PROJECT_DIR/docker-compose.yml" logs -f api
+docker compose -f "$PROJECT_DIR/docker-compose.yml" down
 ```
 
 `down` menghentikan container dan mempertahankan data PostgreSQL di volume. Menghapus volume dengan `down -v` juga menghapus database beserta seed datanya.
