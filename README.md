@@ -85,7 +85,7 @@ Seed menambahkan kategori, atribut filter kategori beserta opsi enum, makes, mod
 yarn start:dev
 ```
 
-API berjalan di `http://localhost:3000`.dan untuk dokumentasi API yang lebih lengkap ada di Swagger tersedia di `http://localhost:3000/api`. Endpoint health check ada di `GET /`.
+API lokal berjalan di `http://localhost:3000`. Dokumentasi Swagger lokal tersedia di `http://localhost:3000/api`. Endpoint health check ada di `GET /`.
 
 ### 7. Coba endpoint
 
@@ -200,3 +200,7 @@ API menggunakan cache-aside untuk hasil GET yang sukses. Cache kategori dan meta
 ```bash
 yarn test:e2e:api    # end-to-end tests
 ```
+
+## Deployment
+
+Swagger API deployment: [https://api.andrea.web.id/api](https://api.andrea.web.id/api)
