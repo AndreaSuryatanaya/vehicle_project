@@ -57,6 +57,23 @@ $ yarn run test:e2e
 $ yarn run test:cov
 ```
 
+## Database documentation and search fixtures
+
+- Database diagram (DBML), category tree strategy, and indexing notes: [`docs/database/README.md`](docs/database/README.md)
+- Apply database migrations configured in `.env`:
+
+```bash
+yarn migrate
+```
+
+- Seed at least 500 search/filter fixtures (600 by default):
+
+```bash
+yarn seed
+```
+
+Run migrations before seeding. Set `SEED_LISTING_COUNT` to seed a larger dataset. The seed script uses the database configured in `.env` and only replaces its own `SEED-DEMO-` fixture listings.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
