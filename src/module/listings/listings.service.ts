@@ -6,11 +6,17 @@ import {
 import { DatabaseError } from 'pg';
 import { ListingsRepository } from './repositories/listings.repository.js';
 import type {
+  CategoryFilterAttribute,
   CreateListingRecord,
+  FilterOptionCount,
   ListingBrowseQuery,
   ListingCursorPage,
   ListingFilterRecord,
+  ListingSearchFilterRecord,
+  ListingSearchResponse,
+  ListingSuggestion,
   ListingRow,
+  SearchCursor,
   UpdateListingRecord,
 } from './interface/listings.interface.js';
 
@@ -19,7 +25,6 @@ export class ListingsService {
   constructor(private readonly listingsRepository: ListingsRepository) {}
 
   async create(input: CreateListingRecord): Promise<ListingRow> {
-    this.validateCreateInput(input);
     try {
       const created = await this.listingsRepository.create(input);
       return (await this.listingsRepository.findById(created.id)) ?? created;
@@ -65,32 +70,93 @@ export class ListingsService {
     };
   }
 
+  async search(query: ListingBrowseQuery): Promise<ListingSearchResponse> {
+    const baseFilters = this.parseFilters({
+      ...query,
+      sort: 'newest',
+      status: 'available',
+      cursor: undefined,
+    });
+    const filters: ListingSearchFilterRecord = {
+      q: query.q?.trim() || undefined,
+      categoryId: baseFilters.categoryId,
+      makeId: baseFilters.makeId,
+      minPrice: baseFilters.minPrice,
+      maxPrice: baseFilters.maxPrice,
+      minYear: baseFilters.minYear,
+      maxYear: baseFilters.maxYear,
+      fuelType: baseFilters.fuelType,
+      status: 'available',
+      limit: baseFilters.limit,
+      cursor: query.cursor ? this.decodeSearchCursor(query.cursor) : undefined,
+    };
+    const [rows, total, facetRows] = await Promise.all([
+      this.listingsRepository.search(filters),
+      this.listingsRepository.countSearch(filters),
+      this.listingsRepository.searchFacets(filters),
+    ]);
+    const hasMore = rows.length > filters.limit;
+    const isPrevious = filters.cursor?.direction === 'previous';
+    const selectedRows = hasMore ? rows.slice(0, filters.limit) : rows;
+    const data = isPrevious ? selectedRows.reverse() : selectedRows;
+    const page = filters.cursor?.page ?? 1;
+    const totalPages = Math.ceil(total / filters.limit);
+    const first = data[0];
+    const last = data[data.length - 1];
+    const nextCursor = page < totalPages && last
+      ? this.encodeSearchCursor({
+          rank: last.rank,
+          createdAt: last.createdAt.toISOString(),
+          id: last.id,
+          direction: 'next',
+          page: page + 1,
+        })
+      : null;
+    const previousCursor = page > 1 && first
+      ? this.encodeSearchCursor({
+          rank: first.rank,
+          createdAt: first.createdAt.toISOString(),
+          id: first.id,
+          direction: 'previous',
+          page: page - 1,
+        })
+      : null;
+    return {
+      data,
+      pagination: {
+        total,
+        page,
+        limit: filters.limit,
+        totalPages,
+        nextCursor,
+        previousCursor,
+      },
+      facets: {
+        make: facetRows.filter((facet) => facet.facet === 'make'),
+        fuelType: facetRows.filter((facet) => facet.facet === 'fuelType'),
+      },
+    };
+  }
+
+  async findSuggestions(query: string): Promise<ListingSuggestion[]> {
+    return this.listingsRepository.findSuggestions(query);
+  }
+
+  findAllFilterOptions(): Promise<FilterOptionCount[]> {
+    return this.listingsRepository.findAllFilterOptions();
+  }
+
+  async findCategoryFilters(categoryId: string): Promise<CategoryFilterAttribute[]> {
+    return this.listingsRepository.findCategoryFilters(categoryId);
+  }
+
   async findOne(id: string): Promise<ListingRow> {
-    this.validateId(id);
     const listing = await this.listingsRepository.findById(id);
     if (!listing) throw new NotFoundException(`Listing with id ${id} not found`);
     return listing;
   }
 
   async update(id: string, input: UpdateListingRecord): Promise<ListingRow> {
-    this.validateId(id);
-    if (!input || typeof input !== 'object' || Array.isArray(input)) {
-      throw new BadRequestException('Listing body must be an object');
-    }
-    if (Object.keys(input).length === 0) {
-      throw new BadRequestException('At least one listing field is required');
-    }
-    if (input.categoryId !== undefined) this.validateId(input.categoryId);
-    if (input.modelId !== undefined) this.validateId(input.modelId);
-    if (input.year !== undefined && (!Number.isInteger(input.year) || input.year < 1886 || input.year > 2200)) {
-      throw new BadRequestException('year must be an integer between 1886 and 2200');
-    }
-    if (input.mileage !== undefined && (!Number.isInteger(input.mileage) || input.mileage < 0)) {
-      throw new BadRequestException('mileage must be a non-negative integer');
-    }
-    if (input.price !== undefined && (!Number.isFinite(input.price) || input.price < 0)) {
-      throw new BadRequestException('price must be zero or greater');
-    }
     try {
       const updated = await this.listingsRepository.update(id, input);
       if (!updated) throw new NotFoundException(`Listing with id ${id} not found`);
@@ -101,7 +167,6 @@ export class ListingsService {
   }
 
   async remove(id: string): Promise<{ id: string; status: string; deletedAt: Date }> {
-    this.validateId(id);
     const removed = await this.listingsRepository.softDelete(id);
     if (!removed) throw new NotFoundException(`Listing with id ${id} not found`);
     return removed;
@@ -109,62 +174,18 @@ export class ListingsService {
 
   private parseFilters(query: ListingBrowseQuery): ListingFilterRecord {
     const limit = query.limit === undefined ? 20 : Number(query.limit);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 100) {
-      throw new BadRequestException('limit must be an integer between 1 and 100');
-    }
-    for (const id of [query.categoryId, query.makeId]) {
-      if (id !== undefined) this.validateId(id);
-    }
-
-    const minPrice = this.numberFilter(query.minPrice, 'minPrice');
-    const maxPrice = this.numberFilter(query.maxPrice, 'maxPrice');
-    const minYear = this.integerFilter(query.minYear, 'minYear');
-    const maxYear = this.integerFilter(query.maxYear, 'maxYear');
-    if (minPrice !== undefined && minPrice < 0 || maxPrice !== undefined && maxPrice < 0) {
-      throw new BadRequestException('Price filters must be zero or greater');
-    }
-    if (minYear !== undefined && (minYear < 1886 || minYear > 2200) ||
-        maxYear !== undefined && (maxYear < 1886 || maxYear > 2200)) {
-      throw new BadRequestException('Year filters must be between 1886 and 2200');
-    }
-    if (minPrice !== undefined && maxPrice !== undefined && minPrice > maxPrice) {
-      throw new BadRequestException('minPrice cannot be greater than maxPrice');
-    }
-    if (minYear !== undefined && maxYear !== undefined && minYear > maxYear) {
-      throw new BadRequestException('minYear cannot be greater than maxYear');
-    }
-
     const sort = query.sort ?? 'newest';
-    if (!['newest', 'oldest', 'price_asc', 'price_desc'].includes(sort)) {
-      throw new BadRequestException('sort must be newest, oldest, price_asc, or price_desc');
-    }
     const status = query.status ?? 'available';
-    if (!['available', 'pending', 'sold', 'removed'].includes(status)) {
-      throw new BadRequestException('status is invalid');
-    }
-    const fuelType = query.fuelType;
-    if (fuelType !== undefined && ![
-      'petrol', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric', 'cng', 'lpg',
-    ].includes(fuelType)) {
-      throw new BadRequestException('fuelType is invalid');
-    }
-
     const cursor = query.cursor ? this.decodeCursor(query.cursor, limit) : undefined;
-    if (cursor && sort.startsWith('price_') && !Number.isFinite(Number(cursor.value))) {
-      throw new BadRequestException('cursor is invalid for price sorting');
-    }
-    if (cursor && !sort.startsWith('price_') && Number.isNaN(Date.parse(cursor.value))) {
-      throw new BadRequestException('cursor is invalid for date sorting');
-    }
 
     return {
       categoryId: query.categoryId,
       makeId: query.makeId,
-      minPrice,
-      maxPrice,
-      minYear,
-      maxYear,
-      fuelType,
+      minPrice: query.minPrice === undefined ? undefined : Number(query.minPrice),
+      maxPrice: query.maxPrice === undefined ? undefined : Number(query.maxPrice),
+      minYear: query.minYear === undefined ? undefined : Number(query.minYear),
+      maxYear: query.maxYear === undefined ? undefined : Number(query.maxYear),
+      fuelType: query.fuelType,
       status,
       sort: sort as ListingFilterRecord['sort'],
       limit,
@@ -179,33 +200,21 @@ export class ListingsService {
     direction: 'next' | 'previous';
     offset: number;
   } {
-    try {
-      const parsed: unknown = JSON.parse(Buffer.from(value, 'base64url').toString('utf8'));
-      if (
-        typeof parsed !== 'object' || parsed === null ||
-        !('value' in parsed) || !('createdAt' in parsed) || !('id' in parsed) ||
-        typeof parsed.value !== 'string' || typeof parsed.createdAt !== 'string' ||
-        typeof parsed.id !== 'string' || !/^[1-9]\d*$/.test(parsed.id) ||
-        Number.isNaN(Date.parse(parsed.createdAt))
-      ) throw new Error('Malformed cursor');
-      const direction = 'direction' in parsed ? parsed.direction : 'next';
-      if (direction !== 'next' && direction !== 'previous') {
-        throw new Error('Malformed cursor direction');
-      }
-      const offset = 'offset' in parsed ? parsed.offset : direction === 'next' ? limit : 0;
-      if (!Number.isSafeInteger(offset) || typeof offset !== 'number' || offset < 0) {
-        throw new Error('Malformed cursor offset');
-      }
-      return {
-        value: parsed.value,
-        createdAt: parsed.createdAt,
-        id: parsed.id,
-        direction,
-        offset,
-      };
-    } catch {
-      throw new BadRequestException('cursor is invalid');
-    }
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as {
+      value: string;
+      createdAt: string;
+      id: string;
+      direction?: 'next' | 'previous';
+      offset?: number;
+    };
+    const direction = parsed.direction ?? 'next';
+    return {
+      value: parsed.value,
+      createdAt: parsed.createdAt,
+      id: parsed.id,
+      direction,
+      offset: parsed.offset ?? (direction === 'next' ? limit : 0),
+    };
   }
 
   private makeCursor(
@@ -224,63 +233,17 @@ export class ListingsService {
     return Buffer.from(JSON.stringify(value)).toString('base64url');
   }
 
-  private numberFilter(value: string | undefined, name: string): number | undefined {
-    if (value === undefined) return undefined;
-    const parsed = Number(value);
-    if (!Number.isFinite(parsed)) throw new BadRequestException(`${name} must be a number`);
-    return parsed;
+  private decodeSearchCursor(value: string): SearchCursor {
+    const parsed = JSON.parse(Buffer.from(value, 'base64url').toString('utf8')) as SearchCursor;
+    return {
+      ...parsed,
+      direction: parsed.direction ?? 'next',
+      page: parsed.page ?? 2,
+    };
   }
 
-  private integerFilter(value: string | undefined, name: string): number | undefined {
-    if (value === undefined) return undefined;
-    const parsed = Number(value);
-    if (!Number.isSafeInteger(parsed)) {
-      throw new BadRequestException(`${name} must be an integer`);
-    }
-    return parsed;
-  }
-
-  private validateCreateInput(input: CreateListingRecord): void {
-    if (!input || typeof input !== 'object') {
-      throw new BadRequestException('Listing body is required');
-    }
-    this.validateId(input.categoryId);
-    this.validateId(input.modelId);
-    if (!Number.isInteger(input.year) || input.year < 1886 || input.year > 2200) {
-      throw new BadRequestException('year must be an integer between 1886 and 2200');
-    }
-    if (!Number.isInteger(input.mileage) || input.mileage < 0) {
-      throw new BadRequestException('mileage must be a non-negative integer');
-    }
-    if (!Number.isFinite(input.price) || input.price < 0) {
-      throw new BadRequestException('price must be zero or greater');
-    }
-    for (const field of [
-      'condition', 'transmission', 'fuelType', 'color', 'city', 'region', 'title',
-    ] as const) {
-      if (typeof input[field] !== 'string' || input[field].trim() === '') {
-        throw new BadRequestException(`${field} is required`);
-      }
-    }
-    for (const image of input.images ?? []) {
-      if (!image.url || typeof image.url !== 'string') {
-        throw new BadRequestException('Each image requires a url');
-      }
-    }
-    for (const attribute of input.attributes ?? []) {
-      this.validateId(attribute.attributeId);
-      const valueCount = [attribute.valueText, attribute.valueNumber, attribute.valueBoolean]
-        .filter((value) => value !== undefined && value !== null).length;
-      if (valueCount !== 1) {
-        throw new BadRequestException('Each attribute must have exactly one value');
-      }
-    }
-  }
-
-  private validateId(value: string): void {
-    if (typeof value !== 'string' || !/^[1-9]\d*$/.test(value)) {
-      throw new BadRequestException('id must be a positive integer');
-    }
+  private encodeSearchCursor(cursor: SearchCursor): string {
+    return Buffer.from(JSON.stringify(cursor)).toString('base64url');
   }
 
   private mapDatabaseError(error: unknown): never {

@@ -36,12 +36,18 @@ export class ResponseInterceptor implements NestInterceptor {
         }
 
         if (this.isPaginated(payload)) {
+          const extraFields = this.isRecord(payload)
+            ? Object.fromEntries(
+                Object.entries(payload).filter(([key]) => !['message', 'data', 'pagination'].includes(key)),
+              )
+            : {};
           return {
             message,
             statusCode,
             isSuccess,
             data: payload.data,
             pagination: payload.pagination,
+            ...extraFields,
           };
         }
 

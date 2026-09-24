@@ -2,6 +2,7 @@ import { Body, Controller, Delete, Get, Param, Patch, Post, Query } from '@nestj
 import { ListingsService } from './listings.service.js';
 import {
   CreateListingDto,
+  ListingSuggestionQueryDto,
   ListingBrowseQueryDto,
   ListingIdParamDto,
   UpdateListingDto,
@@ -19,6 +20,16 @@ export class ListingsController {
   @Get()
   findMany(@Query() query: ListingBrowseQueryDto) {
     return this.listingsService.findMany(query);
+  }
+
+  @Get('search/suggest')
+  findSuggestions(@Query() query: ListingSuggestionQueryDto) {
+    return this.listingsService.findSuggestions(query.q);
+  }
+
+  @Get('search')
+  search(@Query() query: ListingBrowseQueryDto) {
+    return this.listingsService.search(query);
   }
 
   @Get(':id')

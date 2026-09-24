@@ -1,4 +1,3 @@
-import type { PaginatedResponse } from '../../../common/pagination/pagination.js';
 import type { QueryResultRow } from 'pg';
 
 export interface ListingImageInput {
@@ -38,6 +37,7 @@ export type UpdateListingRecord = Partial<
 >;
 
 export interface ListingBrowseQuery {
+  q?: string;
   categoryId?: string;
   makeId?: string;
   minPrice?: string;
@@ -49,6 +49,69 @@ export interface ListingBrowseQuery {
   sort?: string;
   limit?: string;
   cursor?: string;
+}
+
+export interface SearchCursor {
+  rank: number;
+  createdAt: string;
+  id: string;
+  direction: 'next' | 'previous';
+  page: number;
+}
+
+export interface SearchListingRow extends ListingRow {
+  rank: number;
+}
+
+export interface SearchFacetCount {
+  facet: 'make' | 'fuelType';
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface ListingSuggestion {
+  type: 'make' | 'model' | 'city';
+  value: string;
+}
+
+export interface FilterOptionCount {
+  facet: 'make' | 'fuel_type' | 'transmission';
+  value: string;
+  label: string;
+  count: number;
+}
+
+export interface CategoryFilterAttribute {
+  id: string;
+  key: string;
+  label: string;
+  type: 'enum' | 'range' | 'boolean';
+  unit: string | null;
+  isRequired: boolean;
+  sortOrder: number;
+  options: Array<{ value: string; label: string }>;
+}
+
+export interface ListingSearchResponse {
+  data: SearchListingRow[];
+  pagination: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+    nextCursor: string | null;
+    previousCursor: string | null;
+  };
+  facets: {
+    make: SearchFacetCount[];
+    fuelType: SearchFacetCount[];
+  };
+}
+
+export interface ListingSearchFilterRecord extends Omit<ListingFilterRecord, 'sort' | 'cursor'> {
+  q?: string;
+  cursor?: SearchCursor;
 }
 
 export interface ListingCursorPage {
@@ -107,5 +170,3 @@ export interface ListingRow extends QueryResultRow {
   categorySlug?: string;
   images?: Array<{ url: string; position: number; isPrimary: boolean }>;
 }
-
-export type ListingCursorPageResponse = PaginatedResponse<ListingRow>;

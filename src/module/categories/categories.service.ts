@@ -1,5 +1,4 @@
 import {
-  BadRequestException,
   ConflictException,
   Injectable,
   NotFoundException,
@@ -70,23 +69,10 @@ export class CategoriesService {
     pageValue?: string,
     limitValue?: string,
   ): Promise<PaginatedResponse<CategoryListingRecord>> {
-    if (!/^\d+$/.test(categoryId)) {
-      throw new BadRequestException('category id must be a positive integer');
-    }
     const pagination: PaginationParams = {
       page: pageValue === undefined ? 1 : Number(pageValue),
       limit: limitValue === undefined ? 20 : Number(limitValue),
     };
-    if (!Number.isSafeInteger(pagination.page) || pagination.page < 1) {
-      throw new BadRequestException('page must be a positive integer');
-    }
-    if (!Number.isInteger(pagination.limit) || pagination.limit < 1 || pagination.limit > 100) {
-      throw new BadRequestException('limit must be an integer between 1 and 100');
-    }
-    if (!Number.isSafeInteger((pagination.page - 1) * pagination.limit)) {
-      throw new BadRequestException('page is too large');
-    }
-
     if (!(await this.categoriesRepository.hasActiveCategory(categoryId))) {
       throw new NotFoundException(`Category with id ${categoryId} not found`);
     }
@@ -110,9 +96,6 @@ export class CategoriesService {
       parentId: input.parentId ?? null,
       sortOrder: input.sortOrder ?? 0,
     };
-    if (!record.name || !record.slug) {
-      throw new ConflictException('Category name and slug cannot be empty');
-    }
     try {
       return await this.categoriesRepository.create(record);
     } catch (error) {
@@ -121,15 +104,9 @@ export class CategoriesService {
   }
 
   async update(id: string, input: UpdateCategoryInput): Promise<CategoryRecord> {
-    if (!input || Object.keys(input).length === 0) {
-      throw new BadRequestException('At least one category field is required');
-    }
     const record: UpdateCategoryRecord = { ...input };
     if (input.name !== undefined) record.name = input.name.trim();
     if (input.slug !== undefined) record.slug = this.normalizeSlug(input.slug);
-    if (record.name === '') throw new ConflictException('Category name cannot be empty');
-    if (record.slug === '') throw new ConflictException('Category slug cannot be empty');
-
     try {
       const category = await this.categoriesRepository.update(id, record);
       if (!category) throw new NotFoundException(`Category with id ${id} not found`);
