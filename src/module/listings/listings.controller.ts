@@ -5,6 +5,7 @@ import {
   CreateListingDto,
   ListingSuggestionQueryDto,
   ListingBrowseQueryDto,
+  ListingSearchQueryDto,
   ListingIdParamDto,
   UpdateListingDto,
 } from './dto/listings.dto.js';
@@ -51,7 +52,7 @@ export class ListingsController {
   @ApiOperation({ summary: 'Full-text search listings with combined filters and facets' })
   @ApiPaginatedEnvelopeResponse('Search results, facets, and cursor pagination metadata', true)
   @ApiCommonErrors({ badRequest: 'One or more search filters or cursor values are invalid' })
-  search(@Query() query: ListingBrowseQueryDto) {
+  search(@Query() query: ListingSearchQueryDto) {
     return this.listingsService.search(query);
   }
 

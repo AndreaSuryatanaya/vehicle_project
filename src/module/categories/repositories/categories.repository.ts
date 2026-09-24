@@ -125,41 +125,73 @@ export class CategoriesRepository {
   }
 
   async create(input: CreateCategoryRecord): Promise<CategoryRecord> {
-    const result = await this.database.query<CategoryRecord>(`
-      INSERT INTO categories (parent_id, name, slug, sort_order, is_active)
-      VALUES ($1::BIGINT, $2, $3, $4, TRUE)
-      RETURNING id, parent_id AS "parentId", name, slug,
-                sort_order AS "sortOrder", is_active AS "isActive"
-    `, [input.parentId, input.name, input.slug, input.sortOrder]);
-    return result.rows[0];
+    const sortScope = input.parentId === null ? 'root' : `parent:${input.parentId}`;
+    return this.database.transaction(async (client) => {
+      await client.query(
+        'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+        [`vehicle-category-sort:${sortScope}`],
+      );
+      const result = await client.query<CategoryRecord>(`
+        INSERT INTO categories (parent_id, name, slug, sort_order, is_active)
+        SELECT $1::BIGINT, $2, $3, COALESCE(MAX(sort_order), 0) + 1, TRUE
+        FROM categories
+        WHERE parent_id IS NOT DISTINCT FROM $1::BIGINT
+        RETURNING id, parent_id AS "parentId", name, slug,
+                  sort_order AS "sortOrder", is_active AS "isActive"
+      `, [input.parentId, input.name, input.slug]);
+      return result.rows[0];
+    });
   }
 
   async update(id: string, input: UpdateCategoryRecord): Promise<CategoryRecord | undefined> {
-    const fields: string[] = [];
-    const values: unknown[] = [id];
-    const columns: Record<keyof UpdateCategoryRecord, string> = {
-      parentId: 'parent_id',
-      name: 'name',
-      slug: 'slug',
-      sortOrder: 'sort_order',
-      isActive: 'is_active',
-    };
-
-    for (const key of Object.keys(columns) as (keyof UpdateCategoryRecord)[]) {
-      if (input[key] !== undefined) {
-        values.push(input[key]);
-        fields.push(`${columns[key]} = $${values.length}`);
+    return this.database.transaction(async (client) => {
+      const record: UpdateCategoryRecord & { sortOrder?: number } = { ...input };
+      if (input.parentId !== undefined) {
+        const sortScope = input.parentId === null ? 'root' : `parent:${input.parentId}`;
+        await client.query(
+          'SELECT pg_advisory_xact_lock(hashtextextended($1, 0))',
+          [`vehicle-category-sort:${sortScope}`],
+        );
+        const nextOrder = await client.query<{ sortOrder: number }>(`
+          SELECT COALESCE(MAX(sort_order), 0) + 1 AS "sortOrder"
+          FROM categories
+          WHERE parent_id IS NOT DISTINCT FROM $1::BIGINT AND id <> $2::BIGINT
+        `, [input.parentId, id]);
+        record.sortOrder = nextOrder.rows[0].sortOrder;
       }
-    }
-    if (fields.length === 0) return this.findById(id);
 
-    const result = await this.database.query<CategoryRecord>(`
-      UPDATE categories SET ${fields.join(', ')}
-      WHERE id = $1::BIGINT
-      RETURNING id, parent_id AS "parentId", name, slug,
-                sort_order AS "sortOrder", is_active AS "isActive"
-    `, values);
-    return result.rows[0];
+      const fields: string[] = [];
+      const values: unknown[] = [id];
+      const columns: Record<keyof UpdateCategoryRecord | 'sortOrder', string> = {
+        parentId: 'parent_id',
+        name: 'name',
+        slug: 'slug',
+        isActive: 'is_active',
+        sortOrder: 'sort_order',
+      };
+      for (const key of Object.keys(columns) as (keyof UpdateCategoryRecord | 'sortOrder')[]) {
+        if (record[key] !== undefined) {
+          values.push(record[key]);
+          fields.push(`${columns[key]} = $${values.length}`);
+        }
+      }
+      if (fields.length === 0) {
+        const existing = await client.query<CategoryRecord>(`
+          SELECT id, parent_id AS "parentId", name, slug,
+                 sort_order AS "sortOrder", is_active AS "isActive"
+          FROM categories WHERE id = $1::BIGINT
+        `, [id]);
+        return existing.rows[0];
+      }
+
+      const result = await client.query<CategoryRecord>(`
+        UPDATE categories SET ${fields.join(', ')}
+        WHERE id = $1::BIGINT
+        RETURNING id, parent_id AS "parentId", name, slug,
+                  sort_order AS "sortOrder", is_active AS "isActive"
+      `, values);
+      return result.rows[0];
+    });
   }
 
   async delete(id: string): Promise<CategoryRecord | undefined> {

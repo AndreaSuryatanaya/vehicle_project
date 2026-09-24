@@ -1,4 +1,5 @@
 import { Transform, Type } from 'class-transformer';
+import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsArray,
   IsBoolean,
@@ -140,12 +141,6 @@ export class CategoryFilterParamDto {
 
 export class ListingBrowseQueryDto implements ListingBrowseQuery {
   @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MaxLength(200)
-  q?: string;
-
-  @IsOptional()
   @Matches(ID_PATTERN)
   categoryId?: string;
 
@@ -194,6 +189,14 @@ export class ListingBrowseQueryDto implements ListingBrowseQuery {
   @IsString()
   @Validate(ValidListingCursorConstraint)
   cursor?: string;
+}
+
+export class ListingSearchQueryDto extends ListingBrowseQueryDto {
+  @IsOptional()
+  @Transform(trim)
+  @IsString()
+  @MaxLength(200)
+  q?: string;
 }
 
 export class ListingSuggestionQueryDto {
@@ -284,12 +287,27 @@ export class CreateListingDto implements CreateListingRecord {
   @Min(0)
   price!: number;
 
+  @ApiProperty({
+    enum: ['new', 'used'],
+    description: 'Vehicle condition: new for a new vehicle, used for a pre-owned vehicle.',
+    example: 'used',
+  })
   @IsIn(['new', 'used'])
   condition!: string;
 
+  @ApiProperty({
+    enum: ['automatic', 'manual', 'cvt', 'semi_automatic', 'single_speed'],
+    description: 'Transmission type installed in the vehicle.',
+    example: 'automatic',
+  })
   @IsIn(['automatic', 'manual', 'cvt', 'semi_automatic', 'single_speed'])
   transmission!: string;
 
+  @ApiProperty({
+    enum: ['petrol', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric', 'cng', 'lpg'],
+    description: 'Energy or fuel type used by the vehicle.',
+    example: 'petrol',
+  })
   @IsIn(['petrol', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric', 'cng', 'lpg'])
   fuelType!: string;
 
@@ -312,6 +330,11 @@ export class CreateListingDto implements CreateListingRecord {
   region!: string;
 
   @IsOptional()
+  @ApiPropertyOptional({
+    enum: ['available', 'pending', 'sold'],
+    description: 'Optional listing state. Defaults to available when omitted.',
+    example: 'available',
+  })
   @IsIn(['available', 'pending', 'sold'])
   status?: string;
 
@@ -373,14 +396,29 @@ export class UpdateListingDto implements UpdateListingRecord {
   price?: number;
 
   @IsOptional()
+  @ApiPropertyOptional({
+    enum: ['new', 'used'],
+    description: 'Optional vehicle condition: new or pre-owned.',
+    example: 'used',
+  })
   @IsIn(['new', 'used'])
   condition?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({
+    enum: ['automatic', 'manual', 'cvt', 'semi_automatic', 'single_speed'],
+    description: 'Optional transmission type.',
+    example: 'automatic',
+  })
   @IsIn(['automatic', 'manual', 'cvt', 'semi_automatic', 'single_speed'])
   transmission?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({
+    enum: ['petrol', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric', 'cng', 'lpg'],
+    description: 'Optional energy or fuel type.',
+    example: 'petrol',
+  })
   @IsIn(['petrol', 'diesel', 'hybrid', 'plug_in_hybrid', 'electric', 'cng', 'lpg'])
   fuelType?: string;
 
@@ -406,6 +444,11 @@ export class UpdateListingDto implements UpdateListingRecord {
   region?: string;
 
   @IsOptional()
+  @ApiPropertyOptional({
+    enum: ['available', 'pending', 'sold', 'removed'],
+    description: 'Optional listing state. Use removed to mark a listing as removed.',
+    example: 'available',
+  })
   @IsIn(['available', 'pending', 'sold', 'removed'])
   status?: string;
 

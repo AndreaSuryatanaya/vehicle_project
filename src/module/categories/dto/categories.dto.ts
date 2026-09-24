@@ -1,14 +1,12 @@
 import { Transform } from 'class-transformer';
+import { ApiHideProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import {
   IsBoolean,
-  IsInt,
   IsNotEmpty,
   IsOptional,
   IsString,
   Matches,
-  Max,
   MaxLength,
-  Min,
   Validate,
   ValidatorConstraint,
   type ValidationArguments,
@@ -28,7 +26,11 @@ class ValidCategoryPageConstraint implements ValidatorConstraintInterface {
     const page = Number(value);
     const query = args.object as CategoryListingsQueryDto;
     const limit = query.limit === undefined ? 20 : Number(query.limit);
-    return Number.isSafeInteger(page) && page > 0 && Number.isSafeInteger((page - 1) * limit);
+    return (
+      Number.isSafeInteger(page) &&
+      page > 0 &&
+      Number.isSafeInteger((page - 1) * limit)
+    );
   }
 
   defaultMessage(): string {
@@ -51,8 +53,9 @@ class ValidCategoryListingsLimitConstraint implements ValidatorConstraintInterfa
 @ValidatorConstraint({ name: 'categoryPatchNotEmpty', async: false })
 class CategoryPatchNotEmptyConstraint implements ValidatorConstraintInterface {
   validate(_value: unknown, args: ValidationArguments): boolean {
-    return Object.entries(args.object as Record<string, unknown>)
-      .some(([key, value]) => key !== '_patchPayload' && value !== undefined);
+    return Object.entries(args.object as Record<string, unknown>).some(
+      ([key, value]) => key !== '_patchPayload' && value !== undefined,
+    );
   }
 
   defaultMessage(): string {
@@ -60,23 +63,23 @@ class CategoryPatchNotEmptyConstraint implements ValidatorConstraintInterface {
   }
 }
 
-@ValidatorConstraint({ name: 'categoryCanGenerateSlug', async: false })
-class CategoryCanGenerateSlugConstraint implements ValidatorConstraintInterface {
+@ValidatorConstraint({ name: 'categoryNameCanGenerateSlug', async: false })
+class CategoryNameCanGenerateSlugConstraint implements ValidatorConstraintInterface {
   validate(value: unknown, args: ValidationArguments): boolean {
     if (typeof value !== 'string') return false;
-    const input = args.object as CreateCategoryInput;
-    const slug = input.slug ?? value;
-    return slug
-      .trim()
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-|-$/g, '').length > 0;
+    return (
+      value
+        .trim()
+        .toLowerCase()
+        .normalize('NFD')
+        .replace(/[\u0300-\u036f]/g, '')
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/^-|-$/g, '').length > 0
+    );
   }
 
   defaultMessage(): string {
-    return 'name or slug must contain at least one letter or number';
+    return 'name must contain at least one letter or number';
   }
 }
 
@@ -103,32 +106,31 @@ export class CreateCategoryDto implements CreateCategoryInput {
   @IsString()
   @IsNotEmpty()
   @MaxLength(100)
-  @Validate(CategoryCanGenerateSlugConstraint)
+  @Validate(CategoryNameCanGenerateSlugConstraint)
   name!: string;
 
-  @IsOptional()
-  @Transform(trim)
-  @IsString()
-  @MaxLength(120)
-  @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
-  slug?: string;
-
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Optional. Parent category ID. Omit or set null to create a root category.',
+    example: '1',
+  })
   @IsOptional()
   @IsString()
   @Matches(/^[1-9]\d*$/)
   parentId?: string | null;
-
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(2147483647)
-  sortOrder?: number;
 }
 
 export class UpdateCategoryDto implements UpdateCategoryInput {
+  @ApiHideProperty()
   @Validate(CategoryPatchNotEmptyConstraint)
   private readonly _patchPayload = '';
 
+  @ApiPropertyOptional({
+    description:
+      'Optional. Rename the category; the existing slug stays unchanged.',
+    example: 'SUV',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -136,6 +138,10 @@ export class UpdateCategoryDto implements UpdateCategoryInput {
   @MaxLength(100)
   name?: string;
 
+  @ApiPropertyOptional({
+    description: 'Optional. Set a custom URL slug. Must be unique.',
+    example: 'suv',
+  })
   @IsOptional()
   @Transform(trim)
   @IsString()
@@ -143,17 +149,21 @@ export class UpdateCategoryDto implements UpdateCategoryInput {
   @Matches(/^[a-z0-9]+(?:-[a-z0-9]+)*$/)
   slug?: string;
 
+  @ApiPropertyOptional({
+    nullable: true,
+    description:
+      'Optional. Set a parent category ID, or null to move this category to the root.',
+    example: '1',
+  })
   @IsOptional()
   @IsString()
   @Matches(/^[1-9]\d*$/)
   parentId?: string | null;
 
-  @IsOptional()
-  @IsInt()
-  @Min(0)
-  @Max(2147483647)
-  sortOrder?: number;
-
+  @ApiPropertyOptional({
+    description: 'Optional. Enable or disable the category.',
+    example: true,
+  })
   @IsOptional()
   @IsBoolean()
   isActive?: boolean;

@@ -115,9 +115,8 @@ export class CategoriesService {
     const name = input.name.trim();
     const record: CreateCategoryRecord = {
       name,
-      slug: this.normalizeSlug(input.slug ?? name),
+      slug: this.normalizeSlug(name),
       parentId: input.parentId ?? null,
-      sortOrder: input.sortOrder ?? 0,
     };
     try {
       const created = await this.categoriesRepository.create(record);

@@ -150,7 +150,7 @@ describe('Categories and Listings API (e2e)', () => {
     });
 
     it('POST /categories validates payload and maps duplicate or missing-reference database errors', async () => {
-      const payload = { name: 'Motorcycles', sortOrder: 2 };
+      const payload = { name: 'Motorcycles' };
       const response = await request(app.getHttpServer()).post('/categories').send(payload).expect(201);
       expect(response.body.data.slug).toBe('motorcycles');
       await request(app.getHttpServer()).post('/categories').send({ name: '' }).expect(400);

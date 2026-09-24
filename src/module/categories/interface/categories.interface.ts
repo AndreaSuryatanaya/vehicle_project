@@ -41,29 +41,24 @@ export interface CreateCategoryRecord {
   parentId: string | null;
   name: string;
   slug: string;
-  sortOrder: number;
 }
 
 export interface UpdateCategoryRecord {
   parentId?: string | null;
   name?: string;
   slug?: string;
-  sortOrder?: number;
   isActive?: boolean;
 }
 
 export interface CreateCategoryInput {
   name: string;
-  slug?: string;
   parentId?: string | null;
-  sortOrder?: number;
 }
 
 export interface UpdateCategoryInput {
   name?: string;
   slug?: string;
   parentId?: string | null;
-  sortOrder?: number;
   isActive?: boolean;
 }
 
