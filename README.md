@@ -74,6 +74,20 @@ yarn seed
 
 Run migrations before seeding. Set `SEED_LISTING_COUNT` to seed a larger dataset. The seed script uses the database configured in `.env` and only replaces its own `SEED-DEMO-` fixture listings.
 
+## Redis cache and Docker
+
+The API uses a Redis cache-aside strategy for successful GET responses. Category trees/details live for 5 minutes, listing browse/search results for 30 seconds, listing details and suggestions for 1 minute, and filter metadata for 5 minutes. A namespace version is incremented after category or listing writes, so affected cached results become unreachable without expensive wildcard deletes. If Redis is unavailable, requests fall back to PostgreSQL and the API remains available.
+
+Start the full local stack (API, PostgreSQL, and Redis) with:
+
+```bash
+docker compose up --build -d
+```
+
+The API container applies pending SQL migrations when it starts. Open Swagger at `http://localhost:3000/api`. To add search fixtures to the Compose database, run `docker compose exec api node scripts/seed-search-data.js`. PostgreSQL data is kept in the `postgres_data` Docker volume; `docker compose down` preserves it.
+
+The services run in separate containers under one Compose stack, which lets each service restart and manage its own data independently. Compose publishes API port 3000 and PostgreSQL port 5432; Redis stays on the internal Compose network.
+
 ## Deployment
 
 When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.

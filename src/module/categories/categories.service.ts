@@ -4,6 +4,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 import { DatabaseError } from 'pg';
+import { CacheService } from '../../common/cache/cache.service.js';
 import {
   createPaginationMetadata,
   type PaginatedResponse,
@@ -22,14 +23,22 @@ import type {
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly categoriesRepository: CategoriesRepository) {}
+  constructor(
+    private readonly categoriesRepository: CategoriesRepository,
+    private readonly cache: CacheService,
+  ) {}
 
   async findAll(): Promise<CategoryTreeNode[]> {
-    const rows = await this.categoriesRepository.findAllActiveTree();
-    return this.buildTree(rows);
+    return this.cache.getOrSet('categories', 'tree', 300, async () => {
+      const rows = await this.categoriesRepository.findAllActiveTree();
+      return this.buildTree(rows);
+    });
   }
 
-  private buildTree(rows: CategoryRecord[], rootId?: string): CategoryTreeNode[] {
+  private buildTree(
+    rows: CategoryRecord[],
+    rootId?: string,
+  ): CategoryTreeNode[] {
     const nodes = new Map<string, CategoryTreeNode>();
 
     for (const row of rows) {
@@ -46,7 +55,10 @@ export class CategoriesService {
 
     const roots: CategoryTreeNode[] = [];
     for (const node of nodes.values()) {
-      if (rootId === node.id || (rootId === undefined && node.parentId === null)) {
+      if (
+        rootId === node.id ||
+        (rootId === undefined && node.parentId === null)
+      ) {
         roots.push(node);
       } else if (node.parentId !== null) {
         nodes.get(node.parentId)?.children.push(node);
@@ -57,11 +69,13 @@ export class CategoriesService {
   }
 
   async findOne(id: string): Promise<CategoryTreeNode> {
-    const rows = await this.categoriesRepository.findWithActiveChildren(id);
-    if (rows.length === 0) {
-      throw new NotFoundException(`Category with id ${id} not found`);
-    }
-    return this.buildTree(rows, id)[0];
+    return this.cache.getOrSet('categories', `detail:${id}`, 300, async () => {
+      const rows = await this.categoriesRepository.findWithActiveChildren(id);
+      if (rows.length === 0) {
+        throw new NotFoundException(`Category with id ${id} not found`);
+      }
+      return this.buildTree(rows, id)[0];
+    });
   }
 
   async findListings(
@@ -73,19 +87,28 @@ export class CategoriesService {
       page: pageValue === undefined ? 1 : Number(pageValue),
       limit: limitValue === undefined ? 20 : Number(limitValue),
     };
-    if (!(await this.categoriesRepository.hasActiveCategory(categoryId))) {
-      throw new NotFoundException(`Category with id ${categoryId} not found`);
-    }
-
-    const result = await this.categoriesRepository.findListingsInCategoryTree(
-      categoryId,
-      pagination.limit,
-      (pagination.page - 1) * pagination.limit,
+    return this.cache.getOrSet(
+      'listings',
+      `category:${categoryId}:${pagination.page}:${pagination.limit}`,
+      30,
+      async () => {
+        if (!(await this.categoriesRepository.hasActiveCategory(categoryId))) {
+          throw new NotFoundException(
+            `Category with id ${categoryId} not found`,
+          );
+        }
+        const result =
+          await this.categoriesRepository.findListingsInCategoryTree(
+            categoryId,
+            pagination.limit,
+            (pagination.page - 1) * pagination.limit,
+          );
+        return {
+          data: result.data,
+          pagination: createPaginationMetadata(result.total, pagination),
+        };
+      },
     );
-    return {
-      data: result.data,
-      pagination: createPaginationMetadata(result.total, pagination),
-    };
   }
 
   async create(input: CreateCategoryInput): Promise<CategoryRecord> {
@@ -97,19 +120,26 @@ export class CategoriesService {
       sortOrder: input.sortOrder ?? 0,
     };
     try {
-      return await this.categoriesRepository.create(record);
+      const created = await this.categoriesRepository.create(record);
+      await this.cache.invalidate('categories', 'listings');
+      return created;
     } catch (error) {
       this.mapDatabaseError(error);
     }
   }
 
-  async update(id: string, input: UpdateCategoryInput): Promise<CategoryRecord> {
+  async update(
+    id: string,
+    input: UpdateCategoryInput,
+  ): Promise<CategoryRecord> {
     const record: UpdateCategoryRecord = { ...input };
     if (input.name !== undefined) record.name = input.name.trim();
     if (input.slug !== undefined) record.slug = this.normalizeSlug(input.slug);
     try {
       const category = await this.categoriesRepository.update(id, record);
-      if (!category) throw new NotFoundException(`Category with id ${id} not found`);
+      if (!category)
+        throw new NotFoundException(`Category with id ${id} not found`);
+      await this.cache.invalidate('categories', 'listings');
       return category;
     } catch (error) {
       this.mapDatabaseError(error);
@@ -119,7 +149,9 @@ export class CategoriesService {
   async remove(id: string): Promise<{ message: string }> {
     try {
       const category = await this.categoriesRepository.delete(id);
-      if (!category) throw new NotFoundException(`Category with id ${id} not found`);
+      if (!category)
+        throw new NotFoundException(`Category with id ${id} not found`);
+      await this.cache.invalidate('categories', 'listings');
       return { message: 'Category deleted successfully' };
     } catch (error) {
       this.mapDatabaseError(error);
@@ -138,9 +170,12 @@ export class CategoriesService {
 
   private mapDatabaseError(error: unknown): never {
     if (error instanceof DatabaseError) {
-      if (error.code === '23505') throw new ConflictException('Category slug already exists');
+      if (error.code === '23505')
+        throw new ConflictException('Category slug already exists');
       if (error.code === '23503') {
-        throw new ConflictException('Category is referenced by a child category or listing');
+        throw new ConflictException(
+          'Category is referenced by a child category or listing',
+        );
       }
     }
     throw error;

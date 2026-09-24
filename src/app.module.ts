@@ -6,9 +6,10 @@ import { CategoriesModule } from './module/categories/categories.module.js';
 import { ListingsModule } from './module/listings/listings.module.js';
 import { DatabaseModule } from './database/database.module.js';
 import { ResponseInterceptor } from './common/interceptors/response.interceptor.js';
+import { CacheModule } from './common/cache/cache.module.js';
 
 @Module({
-  imports: [DatabaseModule, CategoriesModule, ListingsModule],
+  imports: [DatabaseModule, CacheModule, CategoriesModule, ListingsModule],
   controllers: [AppController],
   providers: [
     AppService,
