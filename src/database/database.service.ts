@@ -20,6 +20,10 @@ export class DatabaseService implements OnModuleDestroy {
         }),
   });
 
+  async checkConnection(): Promise<void> {
+    await this.pool.query('SELECT 1');
+  }
+
   query<Row extends QueryResultRow = QueryResultRow>(
     text: string,
     values?: unknown[],
